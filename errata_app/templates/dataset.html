@@ -2,7 +2,10 @@
 {% block title %}{{ d.name }} · 勘误凭据管理{% endblock %}
 {% block body %}
 <h1>数据集 #{{ d.id }}：{{ d.name }}（{{ d.rows_n }}×{{ d.cols_n }}）</h1>
-<p><a href="{{ url_for('index') }}">← 返回数据集列表</a></p>
+<p>
+  <a href="{{ url_for('index') }}">← 返回数据集列表</a>
+  <a class="btn" href="{{ url_for('recheck_list', dataset_id=d.id) }}">回查清单</a>
+</p>
 
 <div class="card">
   <h2 style="margin-top:0">OCR 识别表（上传原值）</h2>
@@ -78,4 +81,95 @@
 {% else %}
 <p class="muted">尚无凭据。成功证明拟改值后会在此列出。</p>
 {% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">馆方回执登记</h2>
+  <form method="post" action="{{ url_for('register_receipt', dataset_id=d.id) }}">
+    <div class="row-flex">
+      <div style="flex:1;min-width:220px">
+        <label>馆名</label>
+        <input type="text" name="library" maxlength="80" required
+               placeholder="例如：××市地方志馆">
+      </div>
+      <div style="flex:1;min-width:180px">
+        <label>馆方入库批次号（同馆独立递增）</label>
+        <input type="number" name="batch_no" min="0" step="1" required>
+      </div>
+    </div>
+    <label>当前采用的全部凭据号（可多选；不选表示该馆已撤下全部勘误）</label>
+    {% if vouchers %}
+    <table class="data" style="text-align:left;min-width:auto">
+      <thead><tr><th>选择</th><th>凭据 #</th><th>目标格</th><th>采用值（拟改值）</th>
+        <th>状态</th></tr></thead>
+      <tbody>
+      {% for v in vouchers %}
+        <tr>
+          <td style="text-align:center">
+            <input type="checkbox" name="voucher_ids" value="{{ v.id }}">
+          </td>
+          <td class="mono">#{{ v.id }}</td>
+          <td>第 {{ v.target_row + 1 }} 行第 {{ v.target_col + 1 }} 列</td>
+          <td class="mono">{{ v.proposed_value }}</td>
+          <td><span class="badge {{ v.status }}">{{ '有效' if v.status == 'valid' else '已失效' }}</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">本表尚无凭据；此时登记的是空名单（表示已撤下全部勘误）。</p>
+    {% endif %}
+    <p><button type="submit">登记回执</button></p>
+    <p class="muted">
+      凭据须属于本表，已失效的也可登记。同一格只能报一个采用值。
+      批次号小于当前值视为迟到的旧批次，不得替换；等于当前值时内容一致沿用
+      原回执、内容不同则拒收。登记失败时原回执保持不变。
+    </p>
+  </form>
+</div>
+
+<h2>已登记馆方回执</h2>
+{% if receipts %}
+<table class="data">
+  <thead><tr><th>馆名</th><th>当前批次</th><th>所报凭据号</th><th>更新时间（UTC）</th></tr></thead>
+  <tbody>
+  {% for r in receipts %}
+    <tr>
+      <td>{{ r.library }}</td>
+      <td class="mono">#{{ r.batch_no }}</td>
+      <td class="mono">
+        {% if r.voucher_ids %}
+          {% for vid in r.voucher_ids %}#{{ vid }}{% if not loop.last %}，{% endif %}{% endfor %}
+        {% else %}<span class="muted">（空名单：已撤下全部勘误）</span>{% endif %}
+      </td>
+      <td class="muted">{{ r.updated_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">尚无馆方登记回执。</p>
+{% endif %}
+
+{% set flagged = recheck.libraries | selectattr('needs_recheck') | list %}
+<div class="card">
+  <h2 style="margin-top:0">回查提示</h2>
+  {% if flagged %}
+  <p>共 {{ flagged | length }} 家馆的采用值已失去有效依据，需回查：</p>
+  <table class="data">
+    <thead><tr><th>馆名</th><th>批次</th><th>需回查格数</th></tr></thead>
+    <tbody>
+    {% for lib in flagged %}
+      <tr>
+        <td>{{ lib.library }}</td>
+        <td class="mono">#{{ lib.batch_no }}</td>
+        <td>{{ lib.cells | length }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p><a class="btn" href="{{ url_for('recheck_list', dataset_id=d.id) }}">查看回查清单</a></p>
+  {% else %}
+  <p class="muted">没有馆需要回查：所有已登记采用值都仍有满足现行合计的有效凭据支撑。</p>
+  {% endif %}
+</div>
 {% endblock %}

@@ -81,3 +81,40 @@ def parse_proposed(value: str) -> int:
     if parsed > MAX_CELL:
         raise ValidationError(f"拟改值“{value}”超过四位（上限 {MAX_CELL}）。")
     return parsed
+
+
+MAX_BATCH = 2_147_483_647  # SQLite INTEGER 上限
+
+
+def parse_library(value: str) -> str:
+    """馆名：去首尾空白后 1..80 个字符。"""
+    name = (value or "").strip()
+    if not name:
+        raise ValidationError("馆名不能为空。")
+    if len(name) > 80:
+        raise ValidationError("馆名过长（上限 80 个字符）。")
+    return name
+
+
+def parse_batch_no(value: str) -> int:
+    """馆方入库批次号：非负整数，按馆独立递增。"""
+    text = (value or "").strip()
+    if not text.isascii() or not text.isdigit():
+        raise ValidationError(f"批次号“{text}”必须是非负整数。")
+    parsed = int(text)
+    if parsed > MAX_BATCH:
+        raise ValidationError(f"批次号“{text}”超出允许范围（0..{MAX_BATCH}）。")
+    return parsed
+
+
+def parse_voucher_ids(values: list[str] | None) -> list[int]:
+    """当前采用的全部凭据号；允许为空（表示该馆已撤下全部勘误）。"""
+    out: list[int] = []
+    for raw in values or []:
+        text = (raw or "").strip()
+        if not text:
+            continue
+        if not text.isascii() or not text.isdigit():
+            raise ValidationError(f"凭据号“{text}”必须是非负整数。")
+        out.append(int(text))
+    return sorted(set(out))

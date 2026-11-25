@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}回查清单 · {{ d.name }}{% endblock %}
+{% block body %}
+<h1>回查清单 · 数据集 #{{ d.id }}：{{ d.name }}</h1>
+<p>
+  <a href="{{ url_for('dataset_detail', dataset_id=d.id) }}">← 返回数据集</a>
+</p>
+
+<p class="muted">
+  清单逐馆列出“采用值已失去有效依据”的格。只要同表、同格、同值仍有一份
+  有效凭据，且该凭据的引用合计与现值全部相符，该值就无需回查。下列回执与
+  现行依据取自同一个已提交状态。
+</p>
+
+{% set flagged = recheck.libraries | selectattr('needs_recheck') | list %}
+{% if flagged %}
+  {% for lib in flagged %}
+  <div class="card">
+    <h2 style="margin-top:0">馆：{{ lib.library }}
+      <span class="mono muted">（批次 #{{ lib.batch_no }}）</span>
+    </h2>
+    <p class="muted">该馆共采用 {{ lib.adopted_cells }} 格，其中
+      {{ lib.cells | length }} 格需回查。</p>
+    <table class="data">
+      <thead><tr><th>需回查的格</th><th>采用值</th><th>所报凭据号</th>
+        <th>凭据现状</th></tr></thead>
+      <tbody>
+      {% for item in lib.cells %}
+        <tr>
+          <td>第 {{ item.row + 1 }} 行第 {{ item.col + 1 }} 列</td>
+          <td class="mono">{{ item.value }}</td>
+          <td class="mono">
+            {% for vid in item.voucher_ids %}#{{ vid }}{% if not loop.last %}，{% endif %}{% endfor %}
+          </td>
+          <td>
+            {% for c in item.credentials %}
+              <span class="badge {{ c.status }}">#{{ c.id }} {{ '有效' if c.status == 'valid' else '已失效' }}</span>
+              {% if c.status == 'valid' %}<span class="muted">（引用合计已与现值不符）</span>{% endif %}
+            {% endfor %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+{% else %}
+<div class="card">
+  <p>没有馆需要回查：所有已登记回执的采用值都仍有满足现行合计的有效凭据支撑。</p>
+</div>
+{% endif %}
+
+{% if not flagged and not recheck.libraries %}
+<p class="muted">本表尚无馆方回执。</p>
+{% endif %}
+{% endblock %}

@@ -11,8 +11,9 @@ from flask import (Flask, abort, flash, redirect, render_template, request,
 
 from . import db as dbmod
 from . import solver
-from .validation import (MAX_CELL, ValidationError, parse_grid_csv,
-                         parse_margin, parse_proposed)
+from .validation import (MAX_CELL, ValidationError, parse_batch_no,
+                         parse_grid_csv, parse_library, parse_margin,
+                         parse_proposed, parse_voucher_ids)
 
 DB_PATH = os.environ.get(
     "ERRATA_DB_PATH",
@@ -87,10 +88,13 @@ def create_app(db_path: str | None = None) -> Flask:
                 vd = dict(v)
                 vd["result"] = json.loads(v["result_json"])
                 vouchers.append(vd)
+            receipts = dbmod.get_receipts(conn, dataset_id)
+            recheck = dbmod.build_recheck_list(conn, dataset_id)
             return render_template(
                 "dataset.html",
                 d=dict(row), grid=grid, margins=margins,
                 ocr_margins=ocr_margins, vouchers=vouchers,
+                receipts=receipts, recheck=recheck,
                 max_cell=MAX_CELL,
             )
         finally:
@@ -166,6 +170,49 @@ def create_app(db_path: str | None = None) -> Flask:
                 d=dict(row), grid=grid, tr=tr, tc=tc, proposed=proposed,
                 result=result, voucher_id=voucher_id,
             )
+        finally:
+            conn.close()
+
+    @app.route("/datasets/<int:dataset_id>/receipts", methods=["POST"])
+    def register_receipt(dataset_id: int):
+        conn = db()
+        try:
+            if dbmod.get_dataset(conn, dataset_id) is None:
+                abort(404)
+            try:
+                library = parse_library(request.form.get("library", ""))
+                batch_no = parse_batch_no(request.form.get("batch_no", ""))
+                voucher_ids = parse_voucher_ids(
+                    request.form.getlist("voucher_ids"))
+            except ValidationError as exc:
+                flash(str(exc), "error")
+                return redirect(url_for("dataset_detail", dataset_id=dataset_id))
+            try:
+                outcome = dbmod.register_receipt(
+                    conn, dataset_id, library, batch_no, voucher_ids)
+            except dbmod.ReceiptError as exc:
+                flash(f"登记被拒：{exc} 原回执保持不变。", "error")
+                return redirect(url_for("dataset_detail", dataset_id=dataset_id))
+            if outcome["status"] == "created":
+                flash(f"已登记馆“{library}”的回执（批次 #{batch_no}）。", "ok")
+            elif outcome["status"] == "replaced":
+                flash(f"已用批次 #{batch_no} 更新馆“{library}”的回执。", "ok")
+            else:
+                flash(f"批次 #{batch_no} 内容一致，沿用馆“{library}”的原回执。", "ok")
+            return redirect(url_for("dataset_detail", dataset_id=dataset_id))
+        finally:
+            conn.close()
+
+    @app.route("/datasets/<int:dataset_id>/recheck")
+    def recheck_list(dataset_id: int):
+        conn = db()
+        try:
+            row = dbmod.get_dataset(conn, dataset_id)
+            if row is None:
+                abort(404)
+            result = dbmod.build_recheck_list(conn, dataset_id)
+            return render_template(
+                "recheck.html", d=dict(row), recheck=result)
         finally:
             conn.close()
 
